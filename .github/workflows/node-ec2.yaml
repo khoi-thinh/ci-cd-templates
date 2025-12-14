@@ -1,4 +1,5 @@
 name: Node.js CI-CD to EC2 (Reusable)
+
 on:
   workflow_call:
     inputs:
@@ -8,51 +9,56 @@ on:
       deploy_path:
         required: true
         type: string
-      start_command:
-        required: true
-        type: string
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
+
       - name: Install dependencies
         run: npm ci
+
       - name: Run tests
         run: npm test
+
       - name: Package app
         run: |
           tar czf app.tar.gz \
             package.json \
             package-lock.json \
             src/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-artifact
           path: app.tar.gz
+
   deploy-dev:
     needs: build
     runs-on: ubuntu-latest
     environment: dev
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: app-artifact
+
       - name: Copy artifact to DEV EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEV_EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "app.tar.gz"
+          source: app.tar.gz
           target: ${{ inputs.deploy_path }}
+
       - name: Deploy & start app on DEV
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -62,33 +68,30 @@ jobs:
           script: |
             set -e
             cd ${{ inputs.deploy_path }}
-            # Extract new build
             tar xzf app.tar.gz
-            # Install production dependencies
             npm ci --omit=dev
-            # Idempotent start / reload
-            pm2 start ecosystem.config.js \
-              --only ${{ inputs.app_name }} \
-              --update-env
-            # Persist across reboot
+            pm2 delete ${{ inputs.app_name }} || true
+            pm2 start src/index.js --name ${{ inputs.app_name }}
             pm2 save
+
   deploy-prod:
     needs: deploy-dev
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: app-artifact
+
       - name: Copy artifact to PROD EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.PROD_EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "app.tar.gz"
+          source: app.tar.gz
           target: ${{ inputs.deploy_path }}
+
       - name: Deploy & start app on PROD
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -98,13 +101,8 @@ jobs:
           script: |
             set -e
             cd ${{ inputs.deploy_path }}
-            # Extract new build
             tar xzf app.tar.gz
-            # Install production dependencies
             npm ci --omit=dev
-            # Idempotent start / reload
-            pm2 start ecosystem.config.js \
-              --only ${{ inputs.app_name }} \
-              --update-env
-            # Persist across reboot
+            pm2 delete ${{ inputs.app_name }} || true
+            pm2 start src/index.js --name ${{ inputs.app_name }}
             pm2 save
