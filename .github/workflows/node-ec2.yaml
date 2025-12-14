@@ -46,69 +46,93 @@ jobs:
           name: app-artifact
           path: app.tar.gz
 
-  deploy-dev:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: dev
+deploy-dev:
+  needs: build
+  runs-on: ubuntu-latest
+  environment: dev
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - uses: actions/download-artifact@v4
-        with:
-          name: app-artifact
+  steps:
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: app-artifact
 
-      - name: Copy to DEV EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEV_EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "app.tar.gz"
-          target: ${{ inputs.deploy_path }}
+    - name: Copy artifact to DEV EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.DEV_EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "app.tar.gz"
+        target: ${{ inputs.deploy_path }}
 
-      - name: Start app on DEV
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEV_EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ${{ inputs.deploy_path }}
-            tar xzf app.tar.gz
-            npm ci --omit=dev
-            pm2 restart ${{ inputs.app_name }} || \
-            pm2 start ${{ inputs.start_command }} --name ${{ inputs.app_name }}
+    - name: Deploy & start app on DEV
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.DEV_EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          set -e
 
-  deploy-prod:
-    needs: deploy-dev
-    runs-on: ubuntu-latest
-    environment: production   
+          cd ${{ inputs.deploy_path }}
 
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: app-artifact
+          # Extract new build
+          tar xzf app.tar.gz
 
-      - name: Copy to PROD EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.PROD_EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "app.tar.gz"
-          target: ${{ inputs.deploy_path }}
+          # Install production dependencies
+          npm ci --omit=dev
 
-      - name: Start app on PROD
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PROD_EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ${{ inputs.deploy_path }}
-            tar xzf app.tar.gz
-            npm ci --omit=dev
-            pm2 restart ${{ inputs.app_name }} || \
-            pm2 start ${{ inputs.start_command }} --name ${{ inputs.app_name }}
+          # Idempotent start / reload
+          pm2 start ecosystem.config.js \
+            --only ${{ inputs.app_name }} \
+            --update-env
+
+          # Persist across reboot
+          pm2 save
+
+
+deploy-prod:
+  needs: deploy-dev
+  runs-on: ubuntu-latest
+  environment: production   
+
+  steps:
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: app-artifact
+
+    - name: Copy artifact to PROD EC2
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.PROD_EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "app.tar.gz"
+        target: ${{ inputs.deploy_path }}
+
+    - name: Deploy & start app on PROD
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          set -e
+
+          cd ${{ inputs.deploy_path }}
+
+          # Extract new build
+          tar xzf app.tar.gz
+
+          # Install production dependencies
+          npm ci --omit=dev
+
+          # Idempotent start / reload
+          pm2 start ecosystem.config.js \
+            --only ${{ inputs.app_name }} \
+            --update-env
+
+          # Persist across reboot
+          pm2 save
