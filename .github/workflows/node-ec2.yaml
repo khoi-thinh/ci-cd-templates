@@ -45,7 +45,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: dev
-    if: startsWith(github.ref_name, 'feature/')
+    if: contains(github.ref, 'feature/')
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -79,7 +79,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: production
-    if: github.ref_name == 'main'
+    if: github.ref = 'refs/heads/main'
     steps:
       - uses: actions/download-artifact@v4
         with:
