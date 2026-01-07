@@ -12,9 +12,14 @@ on:
       environment:
         required: true
         type: string
-      host:
+    secrets:
+      EC2_HOST:
         required: true
-        type: string
+      EC2_USER:
+        required: true
+      EC2_SSH_KEY:
+        required: true
+        
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -58,7 +63,7 @@ jobs:
       - name: Copy artifact to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ inputs.host }}
+          host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           source: app.tar.gz
@@ -67,7 +72,7 @@ jobs:
       - name: Deploy & start app
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ inputs.host }}
+          host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
