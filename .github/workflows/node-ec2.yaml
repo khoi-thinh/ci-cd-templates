@@ -9,7 +9,12 @@ on:
       deploy_path:
         required: true
         type: string
-
+      environment:
+        required: true
+        type: string
+      host:
+        required: true
+        type: string
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,29 +46,28 @@ jobs:
           name: app-artifact
           path: app.tar.gz
 
-  deploy-dev:
+  deploy:
     needs: build
     runs-on: ubuntu-latest
-    environment: dev
-    if: github.ref_name != 'main' && startsWith(github.ref_name, 'feature/')
+    environment: ${{ inputs.environment }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: app-artifact
 
-      - name: Copy artifact to DEV EC2
+      - name: Copy artifact to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.DEV_EC2_HOST }}
+          host: ${{ inputs.host }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           source: app.tar.gz
           target: ${{ inputs.deploy_path }}
 
-      - name: Deploy & start app on DEV
+      - name: Deploy & start app
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.DEV_EC2_HOST }}
+          host: ${{ inputs.host }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
@@ -74,37 +78,6 @@ jobs:
             pm2 delete ${{ inputs.app_name }} || true
             pm2 start src/index.js --name ${{ inputs.app_name }}
             pm2 save
-
-  deploy-prod:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: production
-    if: github.ref_name == 'main'
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: app-artifact
-
-      - name: Copy artifact to PROD EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.PROD_EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: app.tar.gz
-          target: ${{ inputs.deploy_path }}
-
-      - name: Deploy & start app on PROD
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.PROD_EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            set -e
-            cd ${{ inputs.deploy_path }}
-            tar xzf app.tar.gz
-            npm ci --omit=dev
             pm2 delete ${{ inputs.app_name }} || true
             pm2 start src/index.js --name ${{ inputs.app_name }}
             pm2 save
